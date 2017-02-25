@@ -4,7 +4,10 @@ Based on TensorFlow tutorial on Deep MNIST.
 """
 
 import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
 from tensorflow.examples.tutorials.mnist import input_data
+
 
 def weight_variable(shape):
     initial = tf.truncated_normal(shape, stddev=0.1)
@@ -26,7 +29,7 @@ def run_conv2d(x_image, keep_prob):
     Args:
         x_image: shape [-1, 28, 28, 1]
         keep_prob:  controls the dropout rate
-    Returns: y_conv of shape
+    Returns: y_conv the output of the conv net
 
     """
 
@@ -63,38 +66,130 @@ def run_conv2d(x_image, keep_prob):
     return y_conv
 
 
-def train_and_eval(mnist, session):
-    # Train and Evaluate the Model
+def train_and_eval(session, mnist):
+    # Train and and Evaluate the Model
 
-    for i in range(20000):
+    for i in range(2):
         batch = mnist.train.next_batch(50)
         if i % 100 == 0:
-            [train_accuracy, _] = session.run(
-                [accuracy, train_step],
+            train_accuracy = session.run(
+                accuracy,
                 feed_dict={x: batch[0], y_: batch[1], keep_prob: 1.0})
 
             print("step %d, training accuracy %g" % (i, train_accuracy))
         train_step.run(feed_dict={x: batch[0], y_: batch[1], keep_prob: 0.5})
 
 
-    print("test accuracy %g" % session.run([accuracy], feed_dict={
+    print("test accuracy %g" % session.run(accuracy, feed_dict={
         x: mnist.test.images, y_: mnist.test.labels, keep_prob: 1.0}))
+
+    saver = tf.train.Saver()
+    save_path = saver.save(session, "./model.ckpt")
+    print("Model saved in file: %s" % save_path)
+
+
+def extract_images_of(mnist, digit):
+  """
+  Extract all the images of digit from the input data mnist
+  Args:
+      mnist: MNIST data
+      digit: indicates which digit we are interested in to extract,
+             digit should be a number in [0,9]
+
+  Returns: the images of 'digit' from the input data mnist
+  """
+
+  result = []
+  for i in range (mnist.train.num_examples - 1):
+      if mnist.train.labels[i, digit] == 1:
+          result.append(mnist.train.images[i:i + 1,:])
+
+  return result
+
+def one_hot(digit):
+    """
+    Return the one hot encoding for digit
+    Args:
+        digit: a number in the range [0,9]
+
+    Returns: one hot encoding of digit
+
+    """
+    result = np.zeros(10)
+    result[digit] = 1
+    return result
+
+def make_adversarial_images(session, mnist, source_digit, dest_digit):
+    """
+    Create adversarial images from source_digit which are classified as dest_digit.
+    Args:
+        session: which session of tf should the function use
+        mnist: MNIST data
+
+    Returns: None
+    """
+    images_of_source = extract_images_of(mnist, source_digit)
+
+    for i in range(mnist.train.num_examples):
+        [correct_prediction_res] = session.run([correct_prediction],
+        feed_dict={x: images_of_source[i], y_:np.array(one_hot(source_digit)).reshape(1,10), keep_prob: 1})
+
+        #pick an image of source which is correctly classified by the model
+        if correct_prediction_res == 1:
+            tweak = True
+            _ = session.run([initialization],feed_dict={x: images_of_source[i]})
+
+            while tweak:
+                [pred, _] = session.run(
+                [correct_prediction_b, train_step_b],
+                feed_dict={ y_: np.array(one_hot(dest_digit)).reshape(1, 10), keep_prob: 1 })
+                tweak = not pred[0]
+
+
+            [adversary_image] = session.run([adversary_xvar])
+
+            fig = plt.figure()
+            fig.add_subplot(3,1,1)
+            plt.imshow(adversary_image.reshape(28,28), cmap='gray')
+
+            fig.add_subplot(3, 1, 2)
+            plt.imshow(images_of_source[i].reshape(28, 28), cmap='gray')
+
+            fig.add_subplot(3, 1, 3)
+            plt.imshow(images_of_source[i].reshape(28, 28)- adversary_image.reshape(28,28), cmap='gray')
+            plt.show()
+            break
+
+def build_graph(x, y_, keep_prob, vars_to_optimize = None):
+    """
+
+    Args:
+        x: input data
+        y_: input labels
+        keep_prob: the parameter that controls the drop_out rate
+        vars_to_optimize: the variables that are tuned during optimization
+
+    Returns:
+
+    """
+    y_conv = run_conv2d(x, keep_prob)
+    cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(y_conv, y_))
+    train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy, var_list=vars_to_optimize)
+    correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))
+    accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    return train_step, correct_prediction, accuracy
 
 
 #Placeholders
 x = tf.placeholder(tf.float32, shape=[None, 784])
 y_ = tf.placeholder(tf.float32, shape=[None, 10])
-keep_prob = tf.placeholder(tf.float32)
-
 x_image = tf.reshape(x, [-1, 28, 28, 1])
-y_conv = run_conv2d(x_image, keep_prob)
+keep_prob = tf.placeholder(tf.float32)
+adversary_xvar = tf.Variable(tf.zeros([1, 28, 28, 1]), dtype=tf.float32)
 
-#Calculate the loss from the logits and the labels.
-cross_entropy = tf.reduce_mean(
-        tf.nn.softmax_cross_entropy_with_logits(labels=y_, logits=y_conv))
-train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
-correct_prediction = tf.equal(tf.argmax(y_conv, 1), tf.argmax(y_, 1))
-accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+initialization = tf.assign(adversary_xvar, tf.reshape(x, [1, 28, 28, 1]))
+[train_step, correct_prediction, accuracy] = build_graph(x_image, y_, keep_prob)
+[train_step_b, correct_prediction_b, _] = build_graph(adversary_xvar, y_, keep_prob, [adversary_xvar])
 
 
 def main():
@@ -105,7 +200,8 @@ def main():
     #Load MNIST Data
     mnist = input_data.read_data_sets('MNIST_data', one_hot=True)
 
-    train_and_eval(mnist, sess)
+    train_and_eval(sess, mnist)
+    make_adversarial_images(sess, mnist, 2, 6)
 
 
 if __name__ == '__main__':
