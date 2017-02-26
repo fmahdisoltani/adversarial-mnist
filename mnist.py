@@ -6,6 +6,7 @@ Based on TensorFlow tutorial on Deep MNIST.
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 from tensorflow.examples.tutorials.mnist import input_data
 
 
@@ -69,7 +70,7 @@ def run_conv2d(x_image, keep_prob):
 def train_and_eval(session, mnist):
     # Train and and Evaluate the Model
 
-    for i in range(2):
+    for i in range(20000):
         batch = mnist.train.next_batch(50)
         if i % 100 == 0:
             train_accuracy = session.run(
@@ -129,13 +130,18 @@ def make_adversarial_images(session, mnist, source_digit, dest_digit):
     Returns: None
     """
     images_of_source = extract_images_of(mnist, source_digit)
+    correctly_classified = 0
+    fig = plt.figure(figsize=(4, 8))
+    gs = gridspec.GridSpec(2, 2, width_ratios=[1, 2], height_ratios=[4, 1])
 
     for i in range(mnist.train.num_examples):
+        print i
         [correct_prediction_res] = session.run([correct_prediction],
         feed_dict={x: images_of_source[i], y_:np.array(one_hot(source_digit)).reshape(1,10), keep_prob: 1})
 
         #pick an image of source which is correctly classified by the model
         if correct_prediction_res == 1:
+            correctly_classified += 1
             tweak = True
             _ = session.run([initialization],feed_dict={x: images_of_source[i]})
 
@@ -148,17 +154,31 @@ def make_adversarial_images(session, mnist, source_digit, dest_digit):
 
             [adversary_image] = session.run([adversary_xvar])
 
-            fig = plt.figure()
-            fig.add_subplot(3,1,1)
-            plt.imshow(adversary_image.reshape(28,28), cmap='gray')
-
-            fig.add_subplot(3, 1, 2)
+            ax = fig.add_subplot(10, 3, 3 * correctly_classified - 2)
             plt.imshow(images_of_source[i].reshape(28, 28), cmap='gray')
+            ax.set_yticklabels([])
+            ax.set_xticklabels([])
 
-            fig.add_subplot(3, 1, 3)
-            plt.imshow(images_of_source[i].reshape(28, 28)- adversary_image.reshape(28,28), cmap='gray')
-            plt.show()
-            break
+
+
+            ax = fig.add_subplot(10, 3, 3 * correctly_classified - 1 )
+            plt.imshow(images_of_source[i].reshape(28, 28) - adversary_image.reshape(28, 28), cmap='gray')
+            ax.set_yticklabels([])
+            ax.set_xticklabels([])
+
+            ax = fig.add_subplot(10, 3, 3 * correctly_classified )
+            plt.imshow(adversary_image.reshape(28,28), cmap='gray')
+            ax.set_yticklabels([])
+            ax.set_xticklabels([])
+
+            if correctly_classified == 10:
+                break
+
+
+    # plt.show()
+
+    plt.savefig('adversarial_images')
+    plt.show()
 
 def build_graph(x, y_, keep_prob, vars_to_optimize = None):
     """
