@@ -38,21 +38,27 @@ def run_conv2d(x_image, keep_prob):
     W_conv1 = weight_variable([5, 5, 1, 32])
     b_conv1 = bias_variable([32])
 
+    #h_conv1: shape [-1, 28, 28, 32]
     h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
+    #h_pool1: shape [-1, 14, 14, 32]
     h_pool1 = max_pool_2x2(h_conv1)
 
     # Second Convolutional Layer
     W_conv2 = weight_variable([5, 5, 32, 64])
     b_conv2 = bias_variable([64])
 
+    # h_conv2: shape [-1, 14, 14, 64]
     h_conv2 = tf.nn.relu(conv2d(h_pool1, W_conv2) + b_conv2)
+    # h_pool2: shape [-1, 7, 7, 64]
     h_pool2 = max_pool_2x2(h_conv2)
 
     # Densely Connected Layer
     W_fc1 = weight_variable([7 * 7 * 64, 1024])
     b_fc1 = bias_variable([1024])
 
+    #h_pool2_flat: shape [-1,  7 * 7 * 64]
     h_pool2_flat = tf.reshape(h_pool2, [-1, 7 * 7 * 64])
+    #h_fc1: shape [-1, 1024]
     h_fc1 = tf.nn.relu(tf.matmul(h_pool2_flat, W_fc1) + b_fc1)
 
     # Dropout
@@ -68,11 +74,20 @@ def run_conv2d(x_image, keep_prob):
 
 
 def train_and_eval(session, mnist):
-    # Train and and Evaluate the Model
+    """
+    Train and and Evaluate the Model
+    Args:
+        session: which session of tf should the function use
+        mnist: MNIST data
+
+    Returns: None
+
+    """
 
     for i in range(20000):
         batch = mnist.train.next_batch(50)
         if i % 100 == 0:
+            # evaluation with keep_prob = 1.0
             train_accuracy = session.run(
                 accuracy,
                 feed_dict={x: batch[0], y_: batch[1], keep_prob: 1.0})
@@ -135,7 +150,6 @@ def make_adversarial_images(session, mnist, source_digit, dest_digit):
     gs = gridspec.GridSpec(2, 2, width_ratios=[1, 2], height_ratios=[4, 1])
 
     for i in range(mnist.train.num_examples):
-        print i
         [correct_prediction_res] = session.run([correct_prediction],
         feed_dict={x: images_of_source[i], y_:np.array(one_hot(source_digit)).reshape(1,10), keep_prob: 1})
 
@@ -159,8 +173,6 @@ def make_adversarial_images(session, mnist, source_digit, dest_digit):
             ax.set_yticklabels([])
             ax.set_xticklabels([])
 
-
-
             ax = fig.add_subplot(10, 3, 3 * correctly_classified - 1 )
             plt.imshow(images_of_source[i].reshape(28, 28) - adversary_image.reshape(28, 28), cmap='gray')
             ax.set_yticklabels([])
@@ -175,8 +187,6 @@ def make_adversarial_images(session, mnist, source_digit, dest_digit):
                 break
 
 
-    # plt.show()
-
     plt.savefig('adversarial_images')
     plt.show()
 
@@ -189,9 +199,9 @@ def build_graph(x, y_, keep_prob, vars_to_optimize = None):
         keep_prob: the parameter that controls the drop_out rate
         vars_to_optimize: the variables that are tuned during optimization
 
-    Returns:
-
+    Returns: train_step, correct_prediction, accuracy
     """
+
     y_conv = run_conv2d(x, keep_prob)
     cross_entropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(y_conv, y_))
     train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy, var_list=vars_to_optimize)
